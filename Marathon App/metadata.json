@@ -1,0 +1,6 @@
+{
+  "name": "Marathon Training Planner",
+  "description": "A comprehensive application to help users plan their marathon training schedule, including running, swimming, and rest days. Track activity duration, distance for runs, and view your plan in calendar or schedule formats. Designed to accommodate flexible schedules like shift work over a full year.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
