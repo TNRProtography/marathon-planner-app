@@ -4,7 +4,7 @@ import { SuggestedActivity, ActivityType } from '../types';
 
 // This should be set via environment variables in a real build process
 // For this environment, process.env.API_KEY will be picked up automatically by the execution context.
-const API_KEY = process.env.API_KEY;
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 if (!API_KEY) {
   console.warn("API_KEY is not set. Gemini API calls will fail.");
