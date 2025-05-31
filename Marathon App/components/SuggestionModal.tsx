@@ -1,18 +1,19 @@
-
+// components/SuggestionModal.tsx
 import React, { useEffect, useState, useCallback } from 'react';
-import { SuggestedActivity, ActivityType, UserPreferencesData } from '../types';
-import UserPreferencesForm from './UserPreferencesForm'; // New component
+import { SuggestedActivity, ActivityType, UserPreferencesData, Activity } from '../types'; // Make sure Activity is imported if needed, though not directly used in this file beyond props.
+import UserPreferencesForm from './UserPreferencesForm';
 
 interface SuggestionModalProps {
   isOpen: boolean;
   onClose: () => void;
   suggestedActivities: SuggestedActivity[];
-  onAddSuggestedActivity: (activity: SuggestedActivity) => void;
+  onAddSuggestedActivity: (activity: SuggestedActivity) => void; // This adds it directly
   error: string | null;
   isLoading: boolean;
   onFetchSuggestions: (preferences: UserPreferencesData) => Promise<void>;
   initialPreferences: UserPreferencesData;
   onClearSuggestions: () => void;
+  onEditSuggestedActivity: (activity: SuggestedActivity) => void; // <-- NEW PROP
 }
 
 const activityColorStyles: Record<ActivityType, { border: string, bg: string, text: string, iconBg: string }> = {
@@ -28,6 +29,11 @@ const ActivityIcon: React.FC<{ type: ActivityType }> = ({ type }) => {
   return null;
 };
 
+// Helper to create a unique key for an activity to track if it's added
+const createActivityKey = (activity: SuggestedActivity): string => {
+  return `${activity.date}-${activity.type}-${activity.durationMinutes}-${activity.distanceKm || 'no-dist'}-${activity.notes || 'no-notes'}`;
+};
+
 const SuggestionModal: React.FC<SuggestionModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -37,30 +43,25 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
   isLoading,
   onFetchSuggestions,
   initialPreferences,
-  onClearSuggestions
+  onClearSuggestions,
+  onEditSuggestedActivity, // <-- Destructure new prop
 }) => {
-  const [addedActivities, setAddedActivities] = useState<Set<string>>(new Set());
+  const [addedActivityKeys, setAddedActivityKeys] = useState<Set<string>>(new Set()); // Use the helper
   const [showPreferencesForm, setShowPreferencesForm] = useState<boolean>(true);
   const [currentPreferences, setCurrentPreferences] = useState<UserPreferencesData>(initialPreferences);
 
   useEffect(() => {
     if (isOpen) {
-      // When modal opens, always show preferences form initially,
-      // unless suggestions are already loading or present from a previous opening in the same session.
       if (!isLoading && suggestedActivities.length === 0 && !error) {
          setShowPreferencesForm(true);
-         setCurrentPreferences(initialPreferences); // Reset preferences to default
+         setCurrentPreferences(initialPreferences);
       } else if (suggestedActivities.length > 0 || error) {
-        setShowPreferencesForm(false); // Show existing suggestions/error
+        setShowPreferencesForm(false);
       }
-      // else if isLoading, keep current view (likely suggestions view with loader)
-
-      setAddedActivities(new Set()); // Reset added status
+      setAddedActivityKeys(new Set()); // Reset added status when modal visibility or suggestions change
       document.body.style.overflow = 'hidden';
       const handleEsc = (event: KeyboardEvent) => {
-        if (event.key === 'Escape') {
-          onClose();
-        }
+        if (event.key === 'Escape') onClose();
       };
       document.addEventListener('keydown', handleEsc);
       return () => {
@@ -70,34 +71,48 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
     } else {
       document.body.style.overflow = 'auto';
     }
-  }, [isOpen, initialPreferences, isLoading, suggestedActivities.length, error, onClose]);
-
+  }, [isOpen, initialPreferences, isLoading, suggestedActivities, error, onClose]); // Added suggestedActivities to deps for reset
 
   const handlePreferencesSubmit = async (preferences: UserPreferencesData) => {
-    onClearSuggestions(); // Clear old suggestions and errors
+    onClearSuggestions();
     setCurrentPreferences(preferences);
-    setShowPreferencesForm(false); // Move to suggestions view (will show loader)
+    setShowPreferencesForm(false);
     await onFetchSuggestions(preferences);
-    // Suggestions will be updated via props, re-rendering this component
   };
 
-  const handleAdd = (activity: SuggestedActivity) => {
+  const handleAddSingleActivity = (activity: SuggestedActivity) => {
     onAddSuggestedActivity(activity);
-    const activityKey = `${activity.date}-${activity.type}-${activity.notes || ''}-${activity.durationMinutes}-${activity.distanceKm || ''}`;
-    setAddedActivities(prev => new Set(prev).add(activityKey));
+    setAddedActivityKeys(prev => new Set(prev).add(createActivityKey(activity)));
+  };
+
+  const handleAddAllSuggested = () => {
+    const newKeys = new Set(addedActivityKeys);
+    suggestedActivities.forEach(activity => {
+      const key = createActivityKey(activity);
+      if (!newKeys.has(key)) { // Only add if not already marked as added
+        onAddSuggestedActivity(activity);
+        newKeys.add(key);
+      }
+    });
+    setAddedActivityKeys(newKeys);
+    // Optionally, you might want to close the modal or give feedback
+    // onClose(); // Example: Close modal after adding all
   };
   
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString + 'T00:00:00'); // Ensure local timezone
+    const date = new Date(dateString + 'T00:00:00');
     return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   const handleBackToPreferences = () => {
     setShowPreferencesForm(true);
-    onClearSuggestions(); // Clear suggestions and error to allow fresh input
+    onClearSuggestions();
   };
 
   if (!isOpen) return null;
+
+  const allSuggestionsAdded = suggestedActivities.length > 0 && 
+                            suggestedActivities.every(act => addedActivityKeys.has(createActivityKey(act)));
 
   return (
     <div 
@@ -135,94 +150,98 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
           />
         ) : (
           <>
-            {isLoading && (
-              <div className="text-center py-10">
-                <svg className="animate-spin h-8 w-8 text-purple-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p className="mt-2 text-slate-300">Generating your personalized plan...</p>
-              </div>
-            )}
+            {/* ... (isLoading, error, no suggestions messages - keep as is) ... */}
+            {isLoading && ( /* Your existing loading UI */ <div className="text-center py-10">Loading...</div>)}
+            {error && !isLoading && ( /* Your existing error UI */ <div className="text-red-400">Error: {error} <button onClick={handleBackToPreferences}>Try Again</button></div>)}
+            {!isLoading && !error && suggestedActivities.length === 0 && ( /* Your existing no suggestions UI */ <div className="text-center">No suggestions. <button onClick={handleBackToPreferences}>Adjust</button></div>)}
 
-            {error && !isLoading && (
-              <div className="bg-red-800/50 border border-red-700 text-red-300 px-4 py-3 rounded-md mb-4">
-                <h3 className="font-semibold">Error Fetching Suggestions</h3>
-                <p className="text-sm">{error}</p>
-                <button
-                  onClick={handleBackToPreferences}
-                  className="mt-2 px-3 py-1 text-xs font-medium text-yellow-300 bg-yellow-700 hover:bg-yellow-600 rounded-md"
-                >
-                  Edit Preferences & Try Again
-                </button>
-              </div>
-            )}
-
-            {!isLoading && !error && suggestedActivities.length === 0 && (
-              <div className="text-center py-10 text-slate-400">
-                No suggestions generated. This might be due to very restrictive preferences or an issue with the service.
-                <button
-                  onClick={handleBackToPreferences}
-                  className="mt-3 block mx-auto px-4 py-2 text-sm font-medium text-sky-300 bg-slate-700 hover:bg-slate-600 rounded-md"
-                >
-                  Adjust Preferences & Try Again
-                </button>
-              </div>
-            )}
 
             {!isLoading && !error && suggestedActivities.length > 0 && (
-              <div className="space-y-3">
-                {suggestedActivities.map((activity, index) => {
-                  const activityKey = `${activity.date}-${activity.type}-${activity.notes || ''}-${activity.durationMinutes}-${activity.distanceKm || ''}`;
-                  const isAdded = addedActivities.has(activityKey);
-                  const colors = activityColorStyles[activity.type];
-                  return (
-                    <div 
-                      key={index} // Using index as key is okay if list is static or items have no stable IDs from API
-                      className={`p-3 rounded-md shadow-md border-l-4 ${colors.border} ${colors.bg} flex items-start gap-3 transition-opacity ${isAdded ? 'opacity-60' : ''}`}
-                    >
-                      <div className={`flex-shrink-0 w-10 h-10 rounded-full ${colors.iconBg} flex items-center justify-center mt-1`}>
-                        <ActivityIcon type={activity.type} />
-                      </div>
-                      <div className="flex-grow">
-                        <div className="flex justify-between items-baseline">
-                          <h4 className={`font-semibold ${colors.text}`}>{activity.type} - {formatDate(activity.date)}</h4>
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${colors.bg.replace('/30','/60')} ${colors.text.replace('-300','-200')}`}>
-                            {activity.durationMinutes} min
-                          </span>
-                        </div>
-                        {activity.type === ActivityType.RUN && activity.distanceKm && (
-                          <p className="text-sm text-slate-300">Distance: {activity.distanceKm} km</p>
-                        )}
-                        {activity.notes && (
-                          <p className="text-xs text-slate-400 mt-1 italic">Notes: {activity.notes}</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleAdd(activity)}
-                        disabled={isAdded}
-                        className={`ml-auto self-center px-3 py-1.5 text-xs font-medium rounded-md shadow-sm transition-colors
-                                    ${isAdded 
-                                      ? 'bg-slate-600 text-slate-400 cursor-not-allowed' 
-                                      : 'bg-emerald-600 hover:bg-emerald-700 text-white focus:ring-emerald-500'}
-                                      focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800`}
-                        aria-label={isAdded ? `Added ${activity.type} on ${formatDate(activity.date)} to plan` : `Add ${activity.type} on ${formatDate(activity.date)} to plan`}
-                      >
-                        {isAdded ? 'Added' : 'Add to Plan'}
-                      </button>
-                    </div>
-                  );
-                })}
-                 <button
+              <>
+                {/* --- ADD ALL BUTTON AND BACK BUTTON --- */}
+                <div className="mb-4 flex justify-between items-center">
+                  <button
                     onClick={handleBackToPreferences}
-                    className="mt-4 px-4 py-2 text-sm font-medium text-sky-300 bg-slate-700 hover:bg-slate-600 rounded-md shadow-sm"
+                    className="px-4 py-2 text-sm font-medium text-sky-300 bg-slate-700 hover:bg-slate-600 rounded-md shadow-sm"
                   >
-                    &larr; Edit Preferences
+                    ← Edit Preferences
                   </button>
-              </div>
+                  {!allSuggestionsAdded && (
+                    <button
+                      onClick={handleAddAllSuggested}
+                      className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800 focus:ring-emerald-500"
+                    >
+                      Add All to Plan
+                    </button>
+                  )}
+                </div>
+                {/* --- END ADD ALL BUTTON --- */}
+
+                <div className="space-y-3">
+                  {suggestedActivities.map((activity) => { // Index removed as key, use createActivityKey
+                    const activityKey = createActivityKey(activity);
+                    const isAdded = addedActivityKeys.has(activityKey);
+                    const colors = activityColorStyles[activity.type] || activityColorStyles[ActivityType.REST]; // Fallback
+                    return (
+                      <div 
+                        key={activityKey} // Use a more stable key
+                        className={`p-3 rounded-md shadow-md border-l-4 ${colors.border} ${colors.bg} flex items-center gap-3 transition-opacity ${isAdded ? 'opacity-60' : ''}`}
+                      >
+                        <div className={`flex-shrink-0 w-10 h-10 rounded-full ${colors.iconBg} flex items-center justify-center mt-1`}>
+                          <ActivityIcon type={activity.type} />
+                        </div>
+                        <div className="flex-grow">
+                          {/* ... (activity details - keep as is) ... */}
+                          <div className="flex justify-between items-baseline">
+                            <h4 className={`font-semibold ${colors.text}`}>{activity.type} - {formatDate(activity.date)}</h4>
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${colors.bg.replace('/30','/60')} ${colors.text.replace('-300','-200')}`}>
+                                {activity.durationMinutes} min
+                            </span>
+                          </div>
+                          {activity.type === ActivityType.RUN && activity.distanceKm != null && ( // Check for null/undefined
+                            <p className="text-sm text-slate-300">Distance: {activity.distanceKm} km</p>
+                          )}
+                          {activity.notes && (
+                            <p className="text-xs text-slate-400 mt-1 italic">Notes: {activity.notes}</p>
+                          )}
+                        </div>
+                        {/* --- EDIT AND ADD BUTTONS --- */}
+                        <div className="ml-auto self-center flex items-center space-x-2">
+                          {!isAdded && ( // Only show edit if not yet added
+                            <button
+                              onClick={() => onEditSuggestedActivity(activity)}
+                              className="p-1.5 text-slate-400 hover:text-sky-400 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-slate-700 focus:ring-sky-500"
+                              aria-label={`Edit suggested ${activity.type} on ${formatDate(activity.date)}`}
+                              title="Edit before adding"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleAddSingleActivity(activity)}
+                            disabled={isAdded}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md shadow-sm transition-colors
+                                        ${isAdded 
+                                          ? 'bg-slate-600 text-slate-400 cursor-not-allowed' 
+                                          : 'bg-emerald-600 hover:bg-emerald-700 text-white focus:ring-emerald-500'}
+                                          focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-800`}
+                            aria-label={isAdded ? `Added ${activity.type} on ${formatDate(activity.date)} to plan` : `Add ${activity.type} on ${formatDate(activity.date)} to plan`}
+                          >
+                            {isAdded ? 'Added' : 'Add to Plan'}
+                          </button>
+                        </div>
+                         {/* --- END EDIT AND ADD BUTTONS --- */}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
             
             <div className="mt-6 flex justify-end">
+              {/* ... (Close button - keep as is) ... */}
               <button
                 type="button"
                 onClick={onClose}
