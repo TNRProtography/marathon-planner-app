@@ -1,3 +1,5 @@
+// Marathon App/App.tsx
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import Header from './components/Header';
 import Controls from './components/Controls';
@@ -9,30 +11,26 @@ import GoalSettingsPage from './components/GoalSettingsPage';
 import { Activity, ViewMode, ActivityType, SuggestedActivity, UserPreferencesData, WorkDay, ShiftType, TrainingGoalData, MainView } from './types';
 import { fetchTrainingPlanSuggestion } from './services/geminiService';
 
+// --- HELPER FUNCTIONS ---
 const formatDateToYYYYMMDD = (date: Date): string => {
-  return date.toISOString().split('T')[0];
+  // Ensures local date parts are used to form YYYY-MM-DD
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const getNextMonday = (date: Date = new Date()): Date => {
   const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // 0 is Sunday, 1 is Monday
+  const dayOfWeek = d.getDay(); // Sunday is 0, Monday is 1, ..., Saturday is 6
+  const diff = d.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust to Monday
   d.setDate(diff);
-  d.setHours(0,0,0,0);
+  d.setHours(0, 0, 0, 0); // Set to midnight
   return d;
 };
 
-const initialTrainingGoals: TrainingGoalData = {
-  marathonGoalTime: 'Under 5 hours',
-  currentComfortablePace: '7:30 min/km',
-  currentFastestPace: '6:30 min/km',
-  fitnessLevel: 'Beginner',
-  marathonDate: '',
-  longTermNotes: 'Focus on building a consistent base and enjoying the journey!'
-};
-
-// --- HELPER FUNCTION FOR ICS ---
 const formatICSDate = (date: Date, includeTime: boolean = true): string => {
+  // For ICS, dates/times are typically UTC
   const year = date.getUTCFullYear();
   const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
   const day = date.getUTCDate().toString().padStart(2, '0');
@@ -44,14 +42,28 @@ const formatICSDate = (date: Date, includeTime: boolean = true): string => {
   const seconds = date.getUTCSeconds().toString().padStart(2, '0');
   return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
 };
-// --- END HELPER FUNCTION ---
+// --- END HELPER FUNCTIONS ---
 
+const initialTrainingGoals: TrainingGoalData = {
+  marathonGoalTime: 'Under 5 hours',
+  currentComfortablePace: '7:30 min/km',
+  currentFastestPace: '6:30 min/km',
+  fitnessLevel: 'Beginner',
+  marathonDate: '',
+  longTermNotes: 'Focus on building a consistent base and enjoying the journey!'
+};
 
 const App: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>(() => {
     const savedActivities = localStorage.getItem('marathonActivities');
-    return savedActivities ? JSON.parse(savedActivities) : [];
+    try {
+      return savedActivities ? JSON.parse(savedActivities) : [];
+    } catch (e) {
+      console.error("Error parsing saved activities:", e);
+      return [];
+    }
   });
+
   const [currentPlannerView, setCurrentPlannerView] = useState<ViewMode>('calendar');
   const [isActivityModalOpen, setIsActivityModalOpen] = useState<boolean>(false);
   const [selectedDateForNewActivity, setSelectedDateForNewActivity] = useState<Date | null>(null);
@@ -67,7 +79,12 @@ const App: React.FC = () => {
   const [currentMainView, setCurrentMainView] = useState<MainView>('planner');
   const [trainingGoals, setTrainingGoals] = useState<TrainingGoalData>(() => {
     const savedGoals = localStorage.getItem('marathonTrainingGoals');
-    return savedGoals ? JSON.parse(savedGoals) : initialTrainingGoals;
+    try {
+      return savedGoals ? JSON.parse(savedGoals) : initialTrainingGoals;
+    } catch (e) {
+      console.error("Error parsing saved training goals:", e);
+      return initialTrainingGoals;
+    }
   });
 
   useEffect(() => {
@@ -102,7 +119,7 @@ const App: React.FC = () => {
   }, []);
   
   const openActivityModalForEdit = useCallback((activity: Activity) => {
-    setSelectedDateForNewActivity(new Date(activity.date + 'T00:00:00'));
+    setSelectedDateForNewActivity(new Date(activity.date + 'T00:00:00')); // Treat as local
     setActivityToEdit(activity);
     setIsActivityModalOpen(true);
   }, []);
@@ -114,7 +131,12 @@ const App: React.FC = () => {
   }, []);
 
   const sortedActivities = useMemo(() => {
-    return [...activities].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return [...activities].sort((a, b) => {
+      // Ensure dates are parsed consistently before comparing
+      const dateA = new Date(a.date + 'T00:00:00').getTime();
+      const dateB = new Date(b.date + 'T00:00:00').getTime();
+      return dateA - dateB;
+    });
   }, [activities]);
 
   const handleFetchSuggestions = useCallback(async (preferences: UserPreferencesData) => {
@@ -123,11 +145,10 @@ const App: React.FC = () => {
     setSuggestedActivities([]); 
 
     try {
-      // ... (your existing prompt generation logic - keep it as is)
       const { planStartDate, generalNotes, workSchedule, lastWeekFeedback } = preferences;
-
+      // ... (your existing comprehensive prompt generation logic for Gemini)
       const workScheduleString = workSchedule.map(day => 
-        `- ${day.dayName} (${day.date}): ${day.shift}`
+        `- ${day.dayName} (${new Date(day.date + 'T00:00:00').toLocaleDateString(undefined, {month:'short', day:'numeric'})}): ${day.shift}`
       ).join('\n');
 
       let goalInstructions = `The user is a ${trainingGoals.fitnessLevel} focusing on marathon training.
@@ -142,7 +163,7 @@ const App: React.FC = () => {
       }
       
       let feedbackInstructions = "";
-      if (lastWeekFeedback) {
+      if (lastWeekFeedback && lastWeekFeedback.trim() !== '') {
         feedbackInstructions = `
           User's feedback on their previous week of training: "${lastWeekFeedback}".
           Consider this feedback when planning the current week.
@@ -191,9 +212,9 @@ const App: React.FC = () => {
         
         Ensure the output is ONLY the JSON array, without any surrounding text or markdown.
       `;
-
+      
       const suggestions = await fetchTrainingPlanSuggestion(prompt);
-      setSuggestedActivities(suggestions.slice(0, 7)); // Ensure only 7 days are taken
+      setSuggestedActivities(suggestions.slice(0, 7));
     } catch (error) {
       console.error("Failed to fetch suggestions:", error);
       setSuggestionError(error instanceof Error ? error.message : "An unknown error occurred while fetching suggestions.");
@@ -203,9 +224,22 @@ const App: React.FC = () => {
   }, [trainingGoals]);
 
   const addSuggestedActivityToPlan = useCallback((suggestedActivity: SuggestedActivity) => {
-    handleAddActivity(suggestedActivity); 
-    // Optionally, remove from suggested list or mark as added to prevent re-adding
-    // For now, just adding. You might want more sophisticated logic here.
+    // Convert SuggestedActivity to Activity (mainly ensuring it has an id)
+    const activityToAdd: Omit<Activity, 'id'> = {
+        type: suggestedActivity.type,
+        date: suggestedActivity.date,
+        durationMinutes: suggestedActivity.durationMinutes,
+        distanceKm: suggestedActivity.distanceKm,
+        notes: suggestedActivity.notes,
+    };
+    handleAddActivity(activityToAdd); 
+    // Optional: remove from suggestedActivities to prevent re-adding from the same suggestion list
+    setSuggestedActivities(prev => prev.filter(sa => 
+        !(sa.date === suggestedActivity.date && 
+          sa.type === suggestedActivity.type && 
+          sa.durationMinutes === suggestedActivity.durationMinutes &&
+          sa.notes === suggestedActivity.notes) 
+    ));
   }, [handleAddActivity]);
 
   const initialUserPreferences = useMemo((): UserPreferencesData => {
@@ -231,10 +265,10 @@ const App: React.FC = () => {
   // --- DOWNLOAD CALENDAR FUNCTION ---
   const handleDownloadCalendar = useCallback(() => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0); // Set to start of today for comparison
 
     const futureActivities = activities.filter(activity => {
-      const activityDate = new Date(activity.date + 'T00:00:00');
+      const activityDate = new Date(activity.date + 'T00:00:00'); // Treat activity date as local start of day
       return activityDate >= today;
     });
 
@@ -245,30 +279,27 @@ const App: React.FC = () => {
 
     let icsContent = "BEGIN:VCALENDAR\r\n";
     icsContent += "VERSION:2.0\r\n";
-    icsContent += "PRODID:-//MarathonPlanner//YourApp//EN\r\n"; // Customized PRODID
+    icsContent += "PRODID:-//MarathonPlanner//YourAppV1.0//EN\r\n"; // Customize your PRODID
     icsContent += "CALSCALE:GREGORIAN\r\n";
     icsContent += "METHOD:PUBLISH\r\n";
     icsContent += "X-WR-CALNAME:Marathon Training Plan\r\n";
 
-
-    futureActivities.forEach((activity, index) => { // Added index for UID generation if ID is missing
-      const activityDate = new Date(activity.date + 'T00:00:00'); 
+    futureActivities.forEach((activity, index) => {
+      const activityDate = new Date(activity.date + 'T00:00:00'); // Local start of day
       
-      const dtstart = formatICSDate(activityDate, false); 
+      // All-day event for simplicity, as activities don't have specific start times
+      const dtstart = formatICSDate(activityDate, false); // YYYYMMDD format
       const dtendOriginal = new Date(activityDate);
-      dtendOriginal.setDate(activityDate.getDate() + 1); 
-      const dtend = formatICSDate(dtendOriginal, false);
+      dtendOriginal.setDate(activityDate.getDate() + 1); // DTEND is the start of the next day for all-day
+      const dtend = formatICSDate(dtendOriginal, false); // YYYYMMDD format
 
-      // Ensure activity.id exists, or generate a fallback.
-      // crypto.randomUUID() is good for new activities, but for existing ones, use their stored ID.
-      // If an activity object might not have an ID yet (e.g. before being saved), provide a temporary one for ICS.
       const eventUID = activity.id 
-                       ? `${activity.id}@marathonplanner.app`
-                       : `${formatDateToYYYYMMDD(activityDate)}-${activity.type}-${index}@marathonplanner.app`;
+                       ? `${activity.id}@marathonplanner.yourdomain.com` // Use a domain for uniqueness
+                       : `${formatDateToYYYYMMDD(activityDate)}-${activity.type.replace(/\s+/g, '')}-${index}@marathonplanner.yourdomain.com`;
 
       icsContent += "BEGIN:VEVENT\r\n";
       icsContent += `UID:${eventUID}\r\n`;
-      icsContent += `DTSTAMP:${formatICSDate(new Date())}\r\n`;
+      icsContent += `DTSTAMP:${formatICSDate(new Date())}\r\n`; // Current timestamp in UTC
       icsContent += `DTSTART;VALUE=DATE:${dtstart}\r\n`;
       icsContent += `DTEND;VALUE=DATE:${dtend}\r\n`;
 
@@ -277,7 +308,8 @@ const App: React.FC = () => {
         summary += ` - ${activity.distanceKm} km`;
       }
       summary += ` (${activity.durationMinutes} min)`;
-      icsContent += `SUMMARY:${summary.replace(/[,;\\]/g, '\\$&')}\r\n`; // Escape common special chars
+      // Escape characters for ICS summary
+      icsContent += `SUMMARY:${summary.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,")}\r\n`;
 
       if (activity.notes) {
         const description = activity.notes.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
@@ -290,15 +322,20 @@ const App: React.FC = () => {
 
     const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8;' });
     const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", "marathon_training_plan.ics");
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [activities]); // Dependency: activities array
+    if (typeof link.download === 'string') { // Check for browser support
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "marathon_training_plan.ics");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } else {
+        // Fallback for older browsers or environments where download attribute is not supported
+        alert("ICS file generated. Please copy the following content and save it as a .ics file:\n\n" + icsContent);
+    }
+  }, [activities]);
   // --- END DOWNLOAD CALENDAR FUNCTION ---
 
   return (
@@ -311,14 +348,14 @@ const App: React.FC = () => {
             currentView={currentPlannerView}
             onViewChange={setCurrentPlannerView}
             onAddActivity={() => {
-              setSelectedDateForNewActivity(new Date());
+              setSelectedDateForNewActivity(new Date()); // Use current date for new manual activity
               setActivityToEdit(null);
               setIsActivityModalOpen(true);
             }}
             onSuggestPlan={() => setIsSuggestionModalOpen(true)}
             isSuggestingPlan={isSuggestingPlan}
             onSetGoals={() => setCurrentMainView('goalSettings')}
-            onDownloadCalendar={handleDownloadCalendar} // <-- Pass the handler to Controls
+            onDownloadCalendar={handleDownloadCalendar} // <-- Pass the handler here
           />
           <main className="w-full max-w-5xl mx-auto mt-6 flex-grow">
             {currentPlannerView === 'calendar' ? (
@@ -340,8 +377,7 @@ const App: React.FC = () => {
         </>
       )}
 
-      {/* ... (rest of your App.tsx, GoalSettingsPage, modals, footer) ... */}
-       {currentMainView === 'goalSettings' && (
+      {currentMainView === 'goalSettings' && (
         <GoalSettingsPage
           initialGoals={trainingGoals}
           onSaveGoals={handleUpdateTrainingGoals}
@@ -363,6 +399,9 @@ const App: React.FC = () => {
           isOpen={isSuggestionModalOpen}
           onClose={() => {
             setIsSuggestionModalOpen(false);
+            // Clear suggestions and error when closing to ensure fresh state if reopened
+            // setSuggestedActivities([]); 
+            // setSuggestionError(null);
           }}
           suggestedActivities={suggestedActivities}
           onAddSuggestedActivity={addSuggestedActivityToPlan}
