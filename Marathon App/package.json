@@ -5,23 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",  // This "build": "vite build" is perfect for Cloudflare
+    "build": "vite build", 
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.1.0", // Note: React 19 is very new, ensure compatibility
-    "react": "^19.1.0",     // with other libraries if issues arise.
+    "react-dom": "^19.1.0",
+    "react": "^19.1.0",     
     "@google/genai": "^1.0.1"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0", // You have a newer @types/node, which is fine.
-    "typescript": "~5.7.2",   // Your TypeScript version.
-    "vite": "^6.2.0",         // You have Vite v6, which is also very new.
+    "@types/node": "^22.14.0", 
+    "typescript": "~5.7.2",  
+    "vite": "^6.2.0",       
 
-    // === ADD THESE THREE LINES BELOW ===
-    "tailwindcss": "^3.4.3",  // Latest stable Tailwind v3
-    "postcss": "^8.4.38",     // Latest stable PostCSS v8
-    "autoprefixer": "^10.4.19" // Latest stable Autoprefixer v10
-    // === END OF ADDED LINES ===
+    "tailwindcss": "^3.4.3", 
+    "postcss": "^8.4.38",
+    "autoprefixer": "^10.4.19"
   }
 }
